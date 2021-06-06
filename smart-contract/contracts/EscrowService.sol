@@ -15,7 +15,7 @@ contract EscrowService is AccessControl {
 	address public agent;
 	address public seller;
 	address public buyer;
-	string private conditionToMeet;
+	string public conditionToMeet;
 
 	modifier isActiveState(EscrowState stateToCheck) {
 		require(escrowState == stateToCheck);
@@ -50,18 +50,23 @@ contract EscrowService is AccessControl {
 		_setEscrowState(EscrowState.TransferOccurred);
 	}
 
-	function finishEscrow(string memory conditionToCheck) external onlyRole(AGENT_ROLE) isActiveState(EscrowState.TransferOccurred) {
-		bool escrowConditionIsMet = keccak256(abi.encodePacked((conditionToMeet))) == keccak256(abi.encodePacked((conditionToCheck)));
+	function releaseFunds() external onlyRole(AGENT_ROLE) isActiveState(EscrowState.TransferOccurred) {
 		uint256 releaseAmount = address(this).balance - AGENT_FEE;
 
-        bool success;
-		if (escrowConditionIsMet) {
-			(success, ) = payable(seller).call{value: releaseAmount}("");
-			require(success, "Transfer to seller has failed");
-		} else {
-			(success, ) = payable(buyer).call{value: releaseAmount}("");
-			require(success, "Transfer to buyer has failed");
-		}
+		(bool success, ) = payable(seller).call{value: releaseAmount}("");
+		require(success, "Transfer to seller has failed");
+		
+		(success, ) = payable(agent).call{value: AGENT_FEE}("");
+		require(success, "Transfer of Agent Fee has failed");
+
+		_resetState();
+	}
+
+	function revertFunds() external onlyRole(AGENT_ROLE) isActiveState(EscrowState.TransferOccurred) {
+		uint256 releaseAmount = address(this).balance - AGENT_FEE;
+
+		(bool success, ) = payable(buyer).call{value: releaseAmount}("");
+		require(success, "Transfer to buyer has failed");
 		
 		(success, ) = payable(agent).call{value: AGENT_FEE}("");
 		require(success, "Transfer of Agent Fee has failed");
